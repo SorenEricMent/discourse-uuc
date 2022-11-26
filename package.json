@@ -1,0 +1,24 @@
+{
+  "name": "discourse-uuc",
+  "version": "1.0.0",
+  "description": "Stat users that have posted under a certain category.",
+  "main": "index.mjs",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SorenEricMent/discourse-uuc.git"
+  },
+  "keywords": [
+    "discourse",
+    "statistics",
+    "script"
+  ],
+  "author": "Winslow S.E.M.",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/SorenEricMent/discourse-uuc/issues"
+  },
+  "homepage": "https://github.com/SorenEricMent/discourse-uuc#readme"
+}
