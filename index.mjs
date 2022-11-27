@@ -18,11 +18,15 @@ const config = {
     "interval": {
         "login": 3000,
         "post_list_fetch": 2000,
-        "post_load": 2000,
+        "post_fetch": 2000,
         "limit": {
             "post_list_fetch": 2000,
-            "post_load": 2000
+            "post_fetch": 2000
         } //This script will reduce the interval to accelerate the fetching process if multiple accounts are provided. This could limit such optimization.
+    },
+    "post_fetch_mode": {
+        "window": 60,
+        "all_in_one_request": false
     }
 };
 
@@ -271,14 +275,39 @@ function getPostList(account_list, url) {
                 }
                 pageCounter++;
             });
-        }, config.interval.post_list_fetch / account_list.length > config.interval.limit.post_list_fetch ? config.interval.post_list_fetch / account_list.length : config.interval.limit.post_list_fetch);
+        }, config.interval.post_list_fetch / listLength > config.interval.limit.post_list_fetch ? config.interval.post_list_fetch / listLength : config.interval.limit.post_list_fetch);
     
     })
 }
 
-function userInPostFetch(id, account_list){
-    let userSet = new Set();
-
+function fetchPostStream(id_list, account_list){
+    let accountIndex = 0;
+    let startTimestamp = toTimestamp(config.time_range.start);
+    let endTimestamp = toTimestamp(config.time_range.end);
+    let postIndex = 0;
+    let listLength = account_list.length;
+}
+function userInPostFetch(post_list , account_list){
+    let userSet = {};
+    let accountIndex = 0;
+    let startTimestamp = toTimestamp(config.time_range.start);
+    let endTimestamp = toTimestamp(config.time_range.end);
+    let postStreamOffset = 0;
+    let postIndex = 0;
+    let listLength = account_list.length;
+    let url = config.host + "/t/";
+    return new Promise((resolve, reject) => {
+        let fetchPostInterval = setInterval(() => {
+            let currentAccount = account_list[accountIndex];
+            accountIndex++;
+            if (accountIndex >= listLength) {
+                accountIndex = 0;
+            }
+            let currentPostID = id_list[postIndex];
+            let currentUrl = url + currentPostID + ".json";
+            //post_ids[]=
+        }, config.interval.post_fetch / listLength > config.interval.limit.post_fetch ? config.interval.post_fetch / account_list.length : config.interval.limit.post_fetch);
+    });
 }
 
 function invokeGet(host, data) {
