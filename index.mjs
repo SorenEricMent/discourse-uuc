@@ -1,4 +1,5 @@
 import { default as https } from 'https';
+import { resolve } from 'path';
 
 //Edit it to your own configuation. Or feed winslow with lasagna.
 const config = {
@@ -6,10 +7,10 @@ const config = {
     "account_list": [
         {
             "username": "winslow",
-            "password": "ILoveLasagna"
+            "password": "WhereIsMyLasagna?"
         }
     ],
-    "host": "https://limelight.moe",
+    "host": "https://some.sus.forum",
     "category": "/c/anonymous/58",
     "time_range": {
         "start": "1989-06-05",
@@ -21,13 +22,11 @@ const config = {
         "post_fetch": 2000,
         "limit": {
             "post_list_fetch": 2000,
-            "post_fetch": 2000
-        } //This script will reduce the interval to accelerate the fetching process if multiple accounts are provided. This could limit such optimization.
+            "post_fetch": 2000,
+            "post_stream_fetch": 1000
+        } //This script will reduce the interval to accelerate the fetching process if multiple accounts are provided. This field could limit such optimization.
     },
-    "post_fetch_mode": {
-        "window": 60,
-        "all_in_one_request": false
-    }
+    "fetch_window": 120
 };
 
 
@@ -42,6 +41,25 @@ async function wrapper() {
         console.log(account_list.failure);
     }
     var post_list = await getPostList(account_list.success, config.host + config.category);
+    if(post_list.length === 0){
+        console.log("No post found.");
+        return;
+    }
+    var post_detail = await fetchPostStream(post_list, account_list.success);
+    let taskList = [];
+    for(const key in post_detail){
+        taskList.push({
+            "post": key,
+            "post_list": post_detail[key]
+        });
+    }
+    let result = {};
+    for(var i=0; i<taskList.length; i++){
+        let task = taskList[i];
+        let currentRes = await userInPostFetch(task.post, task.post_list, account_list.success);
+        mergeJSON(result, currentRes);
+    }
+    console.log(result);
 }
 
 
@@ -216,7 +234,7 @@ function loginAccounts(credentials) {
 function getPostList(account_list, url) {
     return new Promise((resolve, reject) => {
         let accountIndex = 0;
-        let pageCounter = 1;
+        let pageCounter = 0;
         let postIDList =  [];
         let listLength = account_list.length;
         let startTimestamp = toTimestamp(config.time_range.start);
@@ -247,6 +265,7 @@ function getPostList(account_list, url) {
                         legacyCookies._forum_session = cookies[0];
                     }
                     currentAccount = cookieRestore(legacyCookies);
+                    account_list[accountIndex] = currentAccount;
                 }
                 data.body = JSON.parse(data.body);
                 if (data.body.hasOwnProperty("topic_list")) {
@@ -254,6 +273,9 @@ function getPostList(account_list, url) {
                     let topic_list = data.body.topic_list.topics;
                     for (const topic of topic_list) {
                         if (topic.hasOwnProperty("id")) {
+                            if(topic.pinned){
+                                continue;
+                            }
                             topic.last_posted_at = toTimestamp(topic.last_posted_at);
                             if(topic.last_posted_at < endTimestamp){
                                 if(topic.last_posted_at < startTimestamp){
@@ -281,31 +303,139 @@ function getPostList(account_list, url) {
 }
 
 function fetchPostStream(id_list, account_list){
+    console.log(id_list);
     let accountIndex = 0;
-    let startTimestamp = toTimestamp(config.time_range.start);
-    let endTimestamp = toTimestamp(config.time_range.end);
     let postIndex = 0;
     let listLength = account_list.length;
-}
-function userInPostFetch(post_list , account_list){
-    let userSet = {};
-    let accountIndex = 0;
-    let startTimestamp = toTimestamp(config.time_range.start);
-    let endTimestamp = toTimestamp(config.time_range.end);
-    let postStreamOffset = 0;
-    let postIndex = 0;
-    let listLength = account_list.length;
+    let postStreamList = {};
     let url = config.host + "/t/";
     return new Promise((resolve, reject) => {
-        let fetchPostInterval = setInterval(() => {
+        let fetchPostStreamInterval = setInterval(() => {
             let currentAccount = account_list[accountIndex];
             accountIndex++;
             if (accountIndex >= listLength) {
                 accountIndex = 0;
             }
-            let currentPostID = id_list[postIndex];
-            let currentUrl = url + currentPostID + ".json";
-            //post_ids[]=
+            let currentUrl = url + id_list[postIndex] + ".json";
+            console.log("Fetching post stream from " + currentUrl);
+            let requestData = {
+                "headers": {
+                    "cookie": currentAccount
+                },
+                "referrer": currentUrl,
+                "method": "GET",
+            };
+            requestData = mergeJSON(requestData, gHeader);
+            invokeGet(currentUrl, requestData).then((data) => {
+                if (data.res.headers.hasOwnProperty("set-cookie")) {
+                    let cookies = data.res.headers["set-cookie"];
+                    let legacyCookies = cookieParser(currentAccount);
+                    if(cookies.length > 1){
+                        legacyCookies._forum_session = cookies[1];
+                        legacyCookies._t = cookies[0];
+                    }else{
+                        legacyCookies._forum_session = cookies[0];
+                    }
+                    currentAccount = cookieRestore(legacyCookies);
+                    account_list[accountIndex] = currentAccount;
+                }
+                data.body = JSON.parse(data.body);
+                postStreamList[id_list[postIndex]] = [];
+                if (data.body.hasOwnProperty("post_stream")) {
+                    let post_stream = data.body.post_stream.stream;
+                    for (const postID of post_stream) {
+                        postStreamList[id_list[postIndex]].push(postID);
+                        console.log(" - Added post with id: " + postID + " to post stream list " + id_list[postIndex] + ".");
+                    }
+                }else{
+                    console.log("Failed to fetch post list, halting posts fetch loop.");
+                    clearInterval(fetchPostStreamInterval);
+                    reject();
+                }
+                postIndex++;
+                if(postIndex >= id_list.length){
+                    clearInterval(fetchPostStreamInterval);
+                    resolve(postStreamList);
+                }
+            });
+        }, config.interval.post_stream_fetch / listLength > config.interval.limit.post_stream_fetch ? config.interval.post_stream_fetch / listLength : config.interval.limit.post_stream_fetch);
+    })
+}
+function userInPostFetch(post_id, post_list , account_list){
+    let userSet = {};
+    let accountIndex = 0;
+    let startTimestamp = toTimestamp(config.time_range.start);
+    let endTimestamp = toTimestamp(config.time_range.end);
+    let listLength = account_list.length;
+    let url = config.host + "/t/" + post_id + "/posts.json?&";
+    return new Promise((resolve, reject) => {
+        let fetchPostInterval = setInterval(() => {
+            let currentAccount = account_list[accountIndex];
+            let currentUrl = url;
+            accountIndex++;
+            if (accountIndex >= listLength) {
+                accountIndex = 0;
+            }
+            let limitCounter = 0;
+            for(const post of post_list){
+                currentUrl += "post_ids[]=" + post + "&";
+                post_list.shift();
+                limitCounter++;
+                if(limitCounter >= config.fetch_window){
+                    break;
+                }
+            }
+            console.log("Fetching posts from " + currentUrl);
+            let requestData = {
+                "headers": {
+                    "cookie": currentAccount
+                },
+                "referrer": currentUrl,
+                "method": "GET",
+            };
+            requestData = mergeJSON(requestData, gHeader);
+            invokeGet(currentUrl, requestData).then((data) => {
+                if (data.res.headers.hasOwnProperty("set-cookie")) {
+                    let cookies = data.res.headers["set-cookie"];
+                    let legacyCookies = cookieParser(currentAccount);
+                    if(cookies.length > 1){
+                        legacyCookies._forum_session = cookies[1];
+                        legacyCookies._t = cookies[0];
+                    }else{
+                        legacyCookies._forum_session = cookies[0];
+                    }
+                    currentAccount = cookieRestore(legacyCookies);
+                    account_list[accountIndex] = currentAccount;
+                }
+                data.body = JSON.parse(data.body);
+                if (data.body.hasOwnProperty("post_stream")) {
+                    let post_stream = data.body.post_stream.posts.reverse();
+                    for (const post of post_stream) {
+                        if (post.hasOwnProperty("id")) {
+                            post.created_at = toTimestamp(post.created_at);
+                            if(post.created_at < endTimestamp){
+                                if(post.created_at < startTimestamp){
+                                    console.log("Fetched post with update timestamp less than dictated start timestamp, halting posts fetch loop.");
+                                    clearInterval(fetchPostInterval);
+                                    resolve(userSet);
+                                    break;
+                                }else{
+                                    console.log(" - Added post with id: " + post.id + " to post list with update timestamp: " + post.created_at + ".");
+                                    userSet[post.user_id] = post.username;
+                                }
+                            }
+                        }
+                    }
+                }else{
+                    console.log("Failed to fetch post list, halting posts fetch loop.");
+                    clearInterval(fetchPostInterval);
+                    reject();
+                }
+                if(post_list.length <= 0){
+                    clearInterval(fetchPostInterval);
+                    resolve(userSet);
+                }
+            });
         }, config.interval.post_fetch / listLength > config.interval.limit.post_fetch ? config.interval.post_fetch / account_list.length : config.interval.limit.post_fetch);
     });
 }
@@ -354,8 +484,7 @@ function invokeReq(host, body, options) {
 }
 
 function toTimestamp(date) {
-    let timestamp = new Date(date).getTime();
-    return timestamp;
+    return new Date(date).getTime();
 }
 
 wrapper();
