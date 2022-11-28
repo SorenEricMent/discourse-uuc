@@ -1,16 +1,15 @@
 import { default as https } from 'https';
-import { resolve } from 'path';
 
 //Edit it to your own configuation. Or feed winslow with lasagna.
 const config = {
-    "user_agent": "Discourse-uuc/1.0 By/WinslowSEM",
+    "user_agent": "Discourse-uuc/1.1 By/WinslowSEM",
     "account_list": [
         {
             "username": "winslow",
             "password": "WhereIsMyLasagna?"
         }
     ],
-    "host": "https://some.sus.forum",
+    "host": "https://some.sus.discourse.forum",
     "category": "/c/anonymous/58",
     "time_range": {
         "start": "1989-06-05",
@@ -239,7 +238,7 @@ function getPostList(account_list, url) {
         let listLength = account_list.length;
         let startTimestamp = toTimestamp(config.time_range.start);
         let endTimestamp = toTimestamp(config.time_range.end);
-        var fetchPostLoop = setInterval(() => {
+        var fetchPostLoop = setInterval(async () => {
             let currentAccount = account_list[accountIndex];
             accountIndex++;
             if (accountIndex >= listLength) {
@@ -254,7 +253,7 @@ function getPostList(account_list, url) {
                 "method": "GET",
             };
             requestData = mergeJSON(requestData, gHeader);
-            invokeGet(currentUrl, requestData).then((data) => {
+            await invokeGet(currentUrl, requestData).then((data) => {
                 if (data.res.headers.hasOwnProperty("set-cookie")) {
                     let cookies = data.res.headers["set-cookie"];
                     let legacyCookies = cookieParser(currentAccount);
@@ -310,7 +309,7 @@ function fetchPostStream(id_list, account_list){
     let postStreamList = {};
     let url = config.host + "/t/";
     return new Promise((resolve, reject) => {
-        let fetchPostStreamInterval = setInterval(() => {
+        let fetchPostStreamInterval = setInterval(async () => {
             let currentAccount = account_list[accountIndex];
             accountIndex++;
             if (accountIndex >= listLength) {
@@ -326,7 +325,7 @@ function fetchPostStream(id_list, account_list){
                 "method": "GET",
             };
             requestData = mergeJSON(requestData, gHeader);
-            invokeGet(currentUrl, requestData).then((data) => {
+            await invokeGet(currentUrl, requestData).then((data) => {
                 if (data.res.headers.hasOwnProperty("set-cookie")) {
                     let cookies = data.res.headers["set-cookie"];
                     let legacyCookies = cookieParser(currentAccount);
@@ -369,7 +368,7 @@ function userInPostFetch(post_id, post_list , account_list){
     let listLength = account_list.length;
     let url = config.host + "/t/" + post_id + "/posts.json?&";
     return new Promise((resolve, reject) => {
-        let fetchPostInterval = setInterval(() => {
+        let fetchPostInterval = setInterval(async () => {
             let currentAccount = account_list[accountIndex];
             let currentUrl = url;
             accountIndex++;
@@ -377,12 +376,15 @@ function userInPostFetch(post_id, post_list , account_list){
                 accountIndex = 0;
             }
             let limitCounter = 0;
-            for(const post of post_list){
-                currentUrl += "post_ids[]=" + post + "&";
-                post_list.shift();
+            while(true){
+                if(post_list.length == 0){
+                    break;
+                }
+                currentUrl += "post_ids[]=" + post_list.pop() + "&";
                 limitCounter++;
                 if(limitCounter >= config.fetch_window){
-                    break;
+                    console.log("Breaking for window.");
+                    break;   
                 }
             }
             console.log("Fetching posts from " + currentUrl);
@@ -394,7 +396,8 @@ function userInPostFetch(post_id, post_list , account_list){
                 "method": "GET",
             };
             requestData = mergeJSON(requestData, gHeader);
-            invokeGet(currentUrl, requestData).then((data) => {
+            await invokeGet(currentUrl, requestData).then((data) => {
+                console.log(" --- " + post_list);
                 if (data.res.headers.hasOwnProperty("set-cookie")) {
                     let cookies = data.res.headers["set-cookie"];
                     let legacyCookies = cookieParser(currentAccount);
@@ -420,7 +423,7 @@ function userInPostFetch(post_id, post_list , account_list){
                                     resolve(userSet);
                                     break;
                                 }else{
-                                    console.log(" - Added post with id: " + post.id + " to post list with update timestamp: " + post.created_at + ".");
+                                    console.log(" - Readed user from post with id: " + post.id + " with update timestamp: " + post.created_at + ".");
                                     userSet[post.user_id] = post.username;
                                 }
                             }
